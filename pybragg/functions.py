@@ -18,7 +18,7 @@ from scipy.optimize import curve_fit
 import numpy as np
 
 def get_masks(z, R0, sigma, low_stop=10, high_stop=5):
-    return z < R0 - low_stop*sigma, (z0 >= R0 - low_stop*sigma) & (z0 <= R0 + high_stop*sigma)
+    return z < R0 - low_stop*sigma, (z >= R0 - low_stop*sigma) & (z <= R0 + high_stop*sigma)
 
 def fitBP(z, D, method='bortfeld', rel_resolution=0.01):
     # check for validity of relevant input arguments
