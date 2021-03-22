@@ -17,7 +17,7 @@ from scipy.special import pbdv
 from scipy.optimize import curve_fit
 import numpy as np
 
-def fitBP(z, D, method='spline', rel_resolution=0.01):
+def fitBP(z, D, method='bortfeld', rel_resolution=0.01):
     # check for validity of relevant input arguments
     assert len(z) == len(D), f"z and D need to have same length but are len(z)={len(z)} and len(D)={len(D)}"
     assert method in ['spline', 'bortfeld'], f"method can only be 'spline' or 'bortfeld' but is {method}"
@@ -101,7 +101,7 @@ def D_hat(z, R0, phi, eps): # paper: Eq. (28)
     return first * (brack_first + brack_second)
 
 def D(z, R0, sigma, phi, eps): # paper: Eq. (29)
-    first        = phi * np.exp( - ( (R0 - z)**2*sigma**(0.565) )/( 4*sigma**2 ) )
+    first        = phi * np.exp( - ( (R0 - z)/(2*sigma) )**2 ) * sigma**(0.565)
     second       = 1 + 0.012 * R0
     brack_first  = 11.26 / sigma * pbdv(-0.565, ( -(R0 - z)/sigma ) )[0]
     brack_second = (0.157 + 11.26 * eps/R0) * pbdv(-1.565, ( -(R0 - z)/sigma ) )[0]
