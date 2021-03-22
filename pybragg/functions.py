@@ -20,7 +20,7 @@ import numpy as np
 def get_masks(z, R0, sigma, low_stop=10, high_stop=5):
     return z < R0 - low_stop*sigma, (z0 >= R0 - low_stop*sigma) & (z0 <= R0 + high_stop*sigma)
 
-def analyseBP(z, D, method='bortfeld', rel_resolution=0.01):
+def fitBP(z, D, method='bortfeld', rel_resolution=0.01):
     # check for validity of relevant input arguments
     assert len(z) == len(D), f"z and D need to have same length but are len(z)={len(z)} and len(D)={len(D)}"
     assert method in ['spline', 'bortfeld'], f"method can only be 'spline' or 'bortfeld' but is {method}"
