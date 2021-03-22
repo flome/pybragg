@@ -17,7 +17,10 @@ from scipy.special import pbdv
 from scipy.optimize import curve_fit
 import numpy as np
 
-def fitBP(z, D, method='bortfeld', rel_resolution=0.01):
+def get_masks(z, R0, sigma, low_stop=10, high_stop=5):
+    return z < R0 - low_stop*sigma, (z0 >= R0 - low_stop*sigma) & (z0 <= R0 + high_stop*sigma)
+
+def analyseBP(z, D, method='bortfeld', rel_resolution=0.01):
     # check for validity of relevant input arguments
     assert len(z) == len(D), f"z and D need to have same length but are len(z)={len(z)} and len(D)={len(D)}"
     assert method in ['spline', 'bortfeld'], f"method can only be 'spline' or 'bortfeld' but is {method}"
@@ -26,7 +29,7 @@ def fitBP(z, D, method='bortfeld', rel_resolution=0.01):
     resolution = rel_resolution*np.min(np.diff(z))
 
     # fit spline with given precision to curve
-    spline_func = interp1d(z, D, kind='cubic')
+    spline_func = interp1d(z, D, kind='quadratic')
     z_spline    = np.linspace(min(z), max(z), round((max(z)-min(z)) / resolution ))
     quantities  = characterize_z_D_curve(z_spline, spline_func(z_spline))
 
@@ -47,24 +50,34 @@ def fitBP(z, D, method='bortfeld', rel_resolution=0.01):
         sigmaMono = (0.012*R0**0.935)/10 # paper: Eq. (18)
         sigmaE0   = 0.01*E0 # assumtion that Delta E will be small
         sigma     = np.sqrt(sigmaMono**2+sigmaE0**2*alpha**2*p**2*E0**(2*p-2)) # paper: Eq. (19)
-        eps       = 0.1 # assumption
+        eps       = 5 # assumption
         phi       = 0.1*quantities['D100'] # assumption
 
-        # create two definition ranges according to paper Eq. (27)
-        first_window  = z < R0 - 10*sigma
-        second_window = (z >= R0 - 10*sigma) & (z <= R0 + 5*sigma)
         # fit only relevant part, rest will be zero anyway
-        z_fit = z [ first_window | second_window ]
-        D_fit = D [ first_window | second_window ]
-        p, c = curve_fit(
+
+        z0 = z_spline
+        D0 = spline_func(z_spline)
+        # create two definition ranges according to paper Eq. (27)
+        first_window, second_window = get_masks(z0, R0, sigma)
+        z_fit = z0 [ first_window | second_window ]
+        D_fit = D0 [ first_window | second_window ]
+
+        p0, c0 = curve_fit(
             bortfeld, z_fit, D_fit,
             p0 = [R0, sigma, phi, eps],
             bounds=( # limits
                 #     R0       |   sigma  |  phi  | eps
-                (R0 - 1*sigma, 0.5*sigma,       0,  -10),
-                (R0 + 1*sigma,   3*sigma,  np.inf,   10)
-            ),
+                (R0 - 5*sigma, 0,       0,  -10),
+                (R0 + 5*sigma,   3*sigma,  np.inf,   10)
+            )
+        )
 
+        first_window, second_window = get_masks(z, R0, sigma)
+        z_fit = z [ first_window | second_window ]
+        D_fit = D [ first_window | second_window ]
+        p, c = curve_fit(
+            bortfeld, z_fit, D_fit,
+            p0 = p0
         )
 
         # return for easy access
@@ -83,8 +96,7 @@ def fitBP(z, D, method='bortfeld', rel_resolution=0.01):
 
 def bortfeld(z, R0, sigma, phi, eps):
     # create two definition ranges according to paper Eq. (27)
-    first_window  = z < R0 - 10*sigma
-    second_window = (z >= R0 - 10*sigma) & (z <= R0 + 5*sigma)
+    first_window, second_window = get_masks(z, R0, sigma)
 
     D_Dhat = D_hat(z[first_window], R0, phi, eps)
     D_D    = D(z[second_window], R0, sigma, phi, eps)
@@ -101,7 +113,7 @@ def D_hat(z, R0, phi, eps): # paper: Eq. (28)
     return first * (brack_first + brack_second)
 
 def D(z, R0, sigma, phi, eps): # paper: Eq. (29)
-    first        = phi * np.exp( - ( (R0 - z)/(2*sigma) )**2 ) * sigma**(0.565)
+    first        = phi * np.exp( - ( (R0 - z)/(4*sigma) )**2 ) * sigma**(0.565)
     second       = 1 + 0.012 * R0
     brack_first  = 11.26 / sigma * pbdv(-0.565, ( -(R0 - z)/sigma ) )[0]
     brack_second = (0.157 + 11.26 * eps/R0) * pbdv(-1.565, ( -(R0 - z)/sigma ) )[0]
