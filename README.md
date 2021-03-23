@@ -1,6 +1,10 @@
 # pybragg
 An implementation of the [Bortfeld bragg curve fit](https://pubmed.ncbi.nlm.nih.gov/9434986/) in python with scipy and numpy.
 
+<p align="center">
+  <img src="/images/bragg_curve.png" width="300" >
+</p>
+
 ## Installation
 
 You can install `pybragg` using `pip install <optional: '--user'> git+https://github.com/flome/pybragg.git`.
