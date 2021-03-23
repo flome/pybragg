@@ -1,9 +1,5 @@
 #########################################################
 #
-# modified based on this code: https://de.mathworks.com/matlabcentral/fileexchange/63405-bragg-peak-analysis
-# original author: Jan Gajewski (https://de.mathworks.com/matlabcentral/profile/authors/4307259)
-# email: jan.gajewski@ifj.edu.pl
-#
 # author of this file: Florian Mentzel
 # email: florian.mentzel@tu-dortmund.de
 # written: 20.03.2021
@@ -13,14 +9,26 @@
 # needed for spline
 from scipy.interpolate import interp1d
 # parabolic cylinder function D
-from scipy.special import pbdv
+from scipy import special
 from scipy.optimize import curve_fit
 import numpy as np
 
-def get_masks(z, R0, sigma, low_stop=10, high_stop=5):
-    return z < R0 - low_stop*sigma, (z0 >= R0 - low_stop*sigma) & (z0 <= R0 + high_stop*sigma)
 
-def analyseBP(z, D, method='bortfeld', rel_resolution=0.01):
+def fitBP(z, D, method='bortfeld', rel_resolution=0.01):
+    """ Automated fit and characterization of a pragg curve.
+    
+    Parameters
+    -----------
+    :param z: depth in phantom in cm
+    :param D: dose at depth z
+    :param method: "bortfeld" for full fit with Bortfeld approximation. "spline" for fast and simple spline fit (default "bortfeld")
+    :param rel_resolution: fraction of z step width for the fit function characterization for range quantities like R80. (default 0.01)
+  
+    Returns
+    --------
+    :returns:  D(z) - depth dose in depth z
+    """
+
     # check for validity of relevant input arguments
     assert len(z) == len(D), f"z and D need to have same length but are len(z)={len(z)} and len(D)={len(D)}"
     assert method in ['spline', 'bortfeld'], f"method can only be 'spline' or 'bortfeld' but is {method}"
@@ -29,7 +37,7 @@ def analyseBP(z, D, method='bortfeld', rel_resolution=0.01):
     resolution = rel_resolution*np.min(np.diff(z))
 
     # fit spline with given precision to curve
-    spline_func = interp1d(z, D, kind='quadratic')
+    spline_func = interp1d(z, D, kind='cubic')
     z_spline    = np.linspace(min(z), max(z), round((max(z)-min(z)) / resolution ))
     quantities  = characterize_z_D_curve(z_spline, spline_func(z_spline))
 
@@ -47,41 +55,26 @@ def analyseBP(z, D, method='bortfeld', rel_resolution=0.01):
         alpha     = 0.0022 # result from paper Fig. 1
         R0        = quantities['R80D']
         E0        = (R0/alpha)**(1/p) # paper: Eq. (4)
-        sigmaMono = (0.012*R0**0.935)/10 # paper: Eq. (18)
+        sigmaMono = (0.012*R0**0.935) # paper: Eq. (18)
         sigmaE0   = 0.01*E0 # assumtion that Delta E will be small
         sigma     = np.sqrt(sigmaMono**2+sigmaE0**2*alpha**2*p**2*E0**(2*p-2)) # paper: Eq. (19)
-        eps       = 5 # assumption
-        phi       = 0.1*quantities['D100'] # assumption
 
-        # fit only relevant part, rest will be zero anyway
-
-        z0 = z_spline
-        D0 = spline_func(z_spline)
-        # create two definition ranges according to paper Eq. (27)
-        first_window, second_window = get_masks(z0, R0, sigma)
-        z_fit = z0 [ first_window | second_window ]
-        D_fit = D0 [ first_window | second_window ]
-
-        p0, c0 = curve_fit(
-            bortfeld, z_fit, D_fit,
-            p0 = [R0, sigma, phi, eps],
-            bounds=( # limits
-                #     R0       |   sigma  |  phi  | eps
-                (R0 - 5*sigma, 0,       0,  -10),
-                (R0 + 5*sigma,   3*sigma,  np.inf,   10)
-            )
-        )
-
-        first_window, second_window = get_masks(z, R0, sigma)
-        z_fit = z [ first_window | second_window ]
-        D_fit = D [ first_window | second_window ]
+        # normalization constant for fit
+        A = quantities['D100']
+        # normalization constant for second part of equation, depends on the epsilon from the original publication
+        k = 0.01394
         p, c = curve_fit(
-            bortfeld, z_fit, D_fit,
-            p0 = p0
-        )
-
+            bortfeld, z, D,
+            p0 = [A, R0, sigma, p, k],
+            bounds=( # limits
+            #               D100        |    R0     |  sigma   |   p  |  k  | 
+                 ( .5*quantities['D100'], R0-3*sigma, 0.5*sigma,   0.5,    0),
+                 (1.5*quantities['D100'], R0+3*sigma, 3  *sigma,   2.5,  0.1),
+             )
+           )
+        
         # return for easy access
-        quantities['bortfeld_fit_results'] = {var: {'nominal': nom, 'std': std} for var, nom, std in zip(['R0', 'sigma', 'phi', 'epsilon'], p, np.diag(c))}
+        quantities['bortfeld_fit_results'] = {var: {'nominal': nom, 'std': std} for var, nom, std in zip(['D100', 'R0', 'sigma', 'p', 'k'], p, np.diag(c))}
 
         # return parameter vector and cov matrix as well
         quantities['bortfeld_fit_p']       = p
@@ -94,32 +87,61 @@ def analyseBP(z, D, method='bortfeld', rel_resolution=0.01):
 
         return quantities
 
-def bortfeld(z, R0, sigma, phi, eps):
-    # create two definition ranges according to paper Eq. (27)
-    first_window, second_window = get_masks(z, R0, sigma)
 
-    D_Dhat = D_hat(z[first_window], R0, phi, eps)
-    D_D    = D(z[second_window], R0, sigma, phi, eps)
+# adapted from https://gray.mgh.harvard.edu/attachments/article/293/BraggCurve.py
+def cyl_gauss(a,x):
+    """Calculate product of Gaussian and parabolic cylinder function"""
+    y = np.zeros_like(x)
+    branch = -12.0   #for large negative values of the argument we run into numerical problems, need to approximate result
 
-    values = np.zeros_like(z)
-    values[first_window]  = D_Dhat
-    values[second_window] = D_D
-    return values
+    x1 = x[x<branch]
+    y1 = np.sqrt(2*np.pi)/special.gamma(-a)*(-x1)**(-a-1)
+    y[x<branch] = y1
 
-def D_hat(z, R0, phi, eps): # paper: Eq. (28)
-    first        = phi / ( 1 + 0.012 * R0)
-    brack_first  = 17.93 * ( R0 - z )**(-0.435)
-    brack_second = 0.444 + 31.7 * (eps/R0) * ( R0 - z )**(0.565)
-    return first * (brack_first + brack_second)
+    x2 = x[x>=branch]
+    y2a = special.pbdv(a,x2)[0]     #special function yielding parabolic cylinder function, first array [0] is function itself
+    y2b = np.exp(-x2*x2/4)
+    y2 = y2a*y2b
 
-def D(z, R0, sigma, phi, eps): # paper: Eq. (29)
-    first        = phi * np.exp( - ( (R0 - z)/(4*sigma) )**2 ) * sigma**(0.565)
-    second       = 1 + 0.012 * R0
-    brack_first  = 11.26 / sigma * pbdv(-0.565, ( -(R0 - z)/sigma ) )[0]
-    brack_second = (0.157 + 11.26 * eps/R0) * pbdv(-1.565, ( -(R0 - z)/sigma ) )[0]
-    return first/second * ( brack_first + brack_second)
+    y[x>=branch] = y2
+
+    return y
+
+
+def bortfeld(z, D100, R0, sigma, p=1.77, k=0.01394):
+    """ Bortfeld function to approximate a Bragg curve.
+    
+    Parameters
+    -----------
+    :param z: depth in phantom in cm
+    :param D100: approximate maximum Dose (height of peak)
+    :param R0: bragg curve range in cm (distance to 80% D100 on distal side)
+    :param sigma: sigma term, measure for peak width
+    :param p: exponent of "Bragg-Kleeman rule" (default 1.77)
+    :param k: scaling factor w/ dependence on epsilon, (default 0.01394) 
+  
+    Returns
+    --------
+    :returns:  D(z) - depth dose in depth z
+    """
+    
+    return 0.65 * D100 * ( cyl_gauss( -1/p, (z-R0)/sigma ) + sigma*k*cyl_gauss( -1/p-1, (z-R0)/sigma ) )
+
 
 def characterize_z_D_curve(z, D):
+    """ Method that computes dose and range quantities from a given bragg curve
+    
+    Parameters
+    -----------
+    :param z: depth in phantom in cm
+    :param D: dose at depth z
+    
+    Returns
+    --------
+    :returns: 
+      - results (dict): Ranges to certain fractions of Dmax on distal (D) and proximal (P) side of peak. Also: FWHM, DFO(1090)/(2080)
+    """
+    
     results = {}
 
     # compute quantities
