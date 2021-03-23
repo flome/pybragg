@@ -1,5 +1,5 @@
 # pybragg
-An implementation of the [Bortfeld bragg curve fit](https://pubmed.ncbi.nlm.nih.gov/9434986/) in python with scipy and numpy.
+An adaption of the [Bortfeld bragg curve fit](https://pubmed.ncbi.nlm.nih.gov/9434986/) in python with scipy and numpy, strongly influenced by [the original author](https://gray.mgh.harvard.edu/attachments/article/293/BraggCurve.py).
 
 <p align="center">
   <img src="/images/bragg_curve.png" width="300" >
