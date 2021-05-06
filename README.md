@@ -21,6 +21,14 @@ bortfeld_fit_params = fitBP(z, D)
 
 The fit returns characteristic values like `D100` (max. Dose) or the proton beam range `R80D` (distal side of the beam, 80\% maximum dose).
 
+The bortfeld fit result (parameters: `bortfeld_fit_params['bortfeld_fit_p']`, covariance matrix: `bortfeld_fit_params['bortfeld_fit_cov']`) can be plotted using the fit results:
+```
+from pybragg import bortfeld
+z = np.linspace(0, 20, 500) # depth in cm
+curve = bortfeld(z, *bortfeld_fit_params['bortfeld_fit_p'])
+plt.plot(z, curve)
+```
+
 ### The bortfeld equation
 You can use the bortfeld equation for your own fit routine or to generate bragg peaks:
 ```
